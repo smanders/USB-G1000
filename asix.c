@@ -151,7 +151,7 @@ static void ax88178_status(struct usbnet *dev, struct urb *urb)
 			usbnet_defer_kevent (dev, EVENT_LINK_RESET );
 		} else
 			netif_carrier_off(dev->net);
-		devwarn(dev, "ax8817x - Link Status is: %d", link);
+		netdev_warn(dev->net, "ax8817x - Link Status is: %d", link);
 	}
 }
 
@@ -171,7 +171,7 @@ static void ax8817x_status(struct usbnet *dev, struct urb *urb)
 			usbnet_defer_kevent (dev, EVENT_LINK_RESET );
 		} else
 			netif_carrier_off(dev->net);
-		devwarn(dev, "ax8817x - Link Status is: %d", link);
+		netdev_warn(dev->net, "ax8817x - Link Status is: %d", link);
 	}
 }
 
@@ -200,7 +200,7 @@ static void ax88772_status(struct usbnet *dev, struct urb *urb)
 			}
 		}
 
-		devwarn(dev, "ax8817x - Link Status is: %d", link);
+		netdev_warn(dev->net, "ax8817x - Link Status is: %d", link);
 	}
 	
 	if (ax772_data->Event)
@@ -237,7 +237,7 @@ static void ax88772a_status(struct usbnet *dev, struct urb *urb)
 			ax772a_data->Event = AX_NOP;
 		}
 
-		devwarn(dev, "ax8817x - Link Status is: %d", link);
+		netdev_warn(dev->net, "ax8817x - Link Status is: %d", link);
 	}
 	
 	if (ax772a_data->Event)
@@ -264,7 +264,7 @@ static void ax88772b_status(struct usbnet *dev, struct urb *urb)
 			netif_carrier_off(dev->net);
 			ax772b_data->time_to_chk = jiffies;
 		}
-		devwarn(dev, "ax8817x - Link Status is: %d", link);
+		netdev_warn(dev->net, "ax8817x - Link Status is: %d", link);
 	}
 
 	if (!link) {
@@ -307,12 +307,12 @@ ax8817x_write_cmd_async(struct usbnet *dev, u8 cmd, u16 value, u16 index,
 	struct urb *urb;
 
 	if ((urb = usb_alloc_urb(0, GFP_ATOMIC)) == NULL) {
-		devdbg(dev, "Error allocating URB in write_cmd_async!");
+		netdev_dbg(dev->net, "Error allocating URB in write_cmd_async!");
 		return;
 	}
 
 	if ((req = kmalloc(sizeof(struct usb_ctrlrequest), GFP_ATOMIC)) == NULL) {
-		deverr(dev, "Failed to allocate memory for control request");
+		netdev_err(dev->net, "Failed to allocate memory for control request");
 		usb_free_urb(urb);
 		return;
 	}
@@ -329,7 +329,7 @@ ax8817x_write_cmd_async(struct usbnet *dev, u8 cmd, u16 value, u16 index,
 			     ax8817x_async_cmd_callback, req);
 
 	if((status = usb_submit_urb(urb, GFP_ATOMIC)) < 0) {
-		deverr(dev, "Error submitting the control message: status=%d",
+		netdev_err(dev->net, "Error submitting the control message: status=%d",
 				status);
 		kfree(req);
 		usb_free_urb(urb);
@@ -345,29 +345,27 @@ static void ax8817x_set_multicast(struct net_device *net)
 	if (net->flags & IFF_PROMISC) {
 		rx_ctl |= AX_RX_CTL_PRO;
 	} else if (net->flags & IFF_ALLMULTI
-		   || net->mc_count > AX_MAX_MCAST) {
+		   || netdev_mc_count(net) > AX_MAX_MCAST) {
 		rx_ctl |= AX_RX_CTL_AMALL;
-	} else if (net->mc_count == 0) {
+	} else if (netdev_mc_empty(net)) {
 		/* just broadcast and directed */
 	} else {
 		/* We use the 20 byte dev->data
 		 * for our 8 byte filter buffer
 		 * to avoid allocating memory that
 		 * is tricky to free later */
-		struct dev_mc_list *mc_list = net->mc_list;
+		struct netdev_hw_addr *ha;
 		u32 crc_bits;
-		int i;
 
 		memset(data->multi_filter, 0, AX_MCAST_FILTER_SIZE);
 
 		/* Build the multicast hash filter. */
-		for (i = 0; i < net->mc_count; i++) {
+		netdev_for_each_mc_addr(ha, net) {
 			crc_bits =
 			    ether_crc(ETH_ALEN,
-				      mc_list->dmi_addr) >> 26;
+				      ha->addr) >> 26;
 			data->multi_filter[crc_bits >> 3] |=
 			    1 << (crc_bits & 7);
-			mc_list = mc_list->next;
 		}
 
 		ax8817x_write_cmd_async(dev, AX_CMD_WRITE_MULTI_FILTER, 0, 0,
@@ -388,29 +386,27 @@ static void ax88772b_set_multicast(struct net_device *net)
 	if (net->flags & IFF_PROMISC) {
 		rx_ctl |= AX_RX_CTL_PRO;
 	} else if (net->flags & IFF_ALLMULTI
-		   || net->mc_count > AX_MAX_MCAST) {
+		   || netdev_mc_count(net) > AX_MAX_MCAST) {
 		rx_ctl |= AX_RX_CTL_AMALL;
-	} else if (net->mc_count == 0) {
+	} else if (netdev_mc_empty(net)) {
 		/* just broadcast and directed */
 	} else {
 		/* We use the 20 byte dev->data
 		 * for our 8 byte filter buffer
 		 * to avoid allocating memory that
 		 * is tricky to free later */
-		struct dev_mc_list *mc_list = net->mc_list;
+		struct netdev_hw_addr *ha;
 		u32 crc_bits;
-		int i;
 
 		memset(data->multi_filter, 0, AX_MCAST_FILTER_SIZE);
 
 		/* Build the multicast hash filter. */
-		for (i = 0; i < net->mc_count; i++) {
+		netdev_for_each_mc_addr(ha, net) {
 			crc_bits =
 			    ether_crc(ETH_ALEN,
-				      mc_list->dmi_addr) >> 26;
+				      ha->addr) >> 26;
 			data->multi_filter[crc_bits >> 3] |=
 			    1 << (crc_bits & 7);
-			mc_list = mc_list->next;
 		}
 
 		ax8817x_write_cmd_async(dev, AX_CMD_WRITE_MULTI_FILTER, 0, 0,
@@ -2500,7 +2496,7 @@ static int ax88772_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	while (skb->len > 0) {
 		if ((short)(header & 0x0000ffff) !=
 		    ~((short)((header & 0xffff0000) >> 16))) {
-			devdbg(dev,"header length data is error");
+			netdev_dbg(dev->net,"header length data is error");
 		}
 		/* get the packet length */
 		size = (u16) (header & 0x0000ffff);
@@ -2511,7 +2507,7 @@ static int ax88772_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 		}
 
 		if (size > ETH_FRAME_LEN) {
-			devdbg(dev,"invalid rx length %d", size);
+			netdev_dbg(dev->net,"invalid rx length %d", size);
 			return 0;
 		}
 		ax_skb = skb_clone(skb, GFP_ATOMIC);
@@ -2537,7 +2533,7 @@ static int ax88772_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	}
 
 	if (skb->len < 0) {
-		devdbg(dev,"invalid rx length %d", skb->len);
+		netdev_dbg(dev->net,"invalid rx length %d", skb->len);
 		return 0;
 	}
 	return 1;
@@ -2626,7 +2622,7 @@ static int ax88772b_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 		}
 
 		if (rx_hdr->len > (ETH_FRAME_LEN + 4)) {
-			devdbg(dev,"invalid rx length %d", rx_hdr->len);
+			netdev_dbg(dev->net,"invalid rx length %d", rx_hdr->len);
 			return 0;
 		}
 
@@ -2660,10 +2656,11 @@ static int ax88772b_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 		skb_pull(skb, ((rx_hdr->len + sizeof (*rx_hdr) + 3) & 0xfffc));
 
 		if (skb->len == 0)
-			break;	}
+			break;
+	}
 
 	if (skb->len < 0) {
-		devdbg(dev,"invalid rx length %d", skb->len);
+		netdev_dbg(dev->net,"invalid rx length %d", skb->len);
 		return 0;
 	}
 	return 1;
